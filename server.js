@@ -1,7 +1,6 @@
 const express = require('express');
 const { WebSocketServer, WebSocket } = require('ws');
-const fetch = require('node-fetch');
-const http = require('http');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));const http = require('http');
 const path = require('path');
 
 const app = express();
