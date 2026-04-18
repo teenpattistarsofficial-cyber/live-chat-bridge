@@ -24,7 +24,13 @@ const faq = [
     answer: "Hello boss 🙏\nKindly try to refresh the game or switch internet connection.\nIf issue persists, let us know so we can assist further 😊" }
 ];
 
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static files from public directory
+app.use(express.static('public'));
+
+// Also serve root index.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'widget.html'));
+});
 
 const userStates = new Map();
 
@@ -46,7 +52,6 @@ wss.on('connection', (widgetWs) => {
       const lowerText = (msg.text || '').toLowerCase();
       const wantsHuman = HUMAN_TRIGGERS.some(t => lowerText.includes(t));
 
-      // User wants human directly
       if (wantsHuman) {
         widgetWs.send(JSON.stringify({ type: 'human_mode', message: 'Connecting you to a human... Please hold 🙏' }));
         if (YOUR_TELEGRAM_ID && TELEGRAM_BOT_TOKEN) {
@@ -60,7 +65,6 @@ wss.on('connection', (widgetWs) => {
         return;
       }
 
-      // Awaiting screenshot response
       if (state.awaitingScreenshot) {
         const hasConfirmation = lowerText.includes('screenshot') || lowerText.includes('done') || 
                              lowerText.includes('sent') || lowerText.includes('yes') ||
@@ -84,7 +88,6 @@ wss.on('connection', (widgetWs) => {
         return;
       }
 
-      // Deposit/balance issues - ask for screenshot first
       const depositKeywords = ['deposit', 'balance', 'not added', 'missing', 'fail', 'failed', 'not going through', 'stuck', 'transaction'];
       const isDepositIssue = depositKeywords.some(k => lowerText.includes(k));
 
@@ -94,7 +97,6 @@ wss.on('connection', (widgetWs) => {
         return;
       }
 
-      // Check FAQ
       const faqMatch = faq.find(item => item.keywords.some(k => lowerText.includes(k)));
       if (faqMatch && faqMatch.answer) {
         widgetWs.send(JSON.stringify({ type: 'bot_message', text: faqMatch.answer }));
