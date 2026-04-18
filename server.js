@@ -25,25 +25,63 @@ const faq = [
     answer: "Hello boss 🙏\nKindly try to refresh the game or switch internet connection.\nIf issue persists, let us know so we can assist further 😊" }
 ];
 
+// DEBUG: List all files
+app.get('/debug/files', (req, res) => {
+  const publicDir = path.join(__dirname, 'public');
+  const files = [];
+
+  function listDir(dir, prefix = '') {
+    try {
+      const items = fs.readdirSync(dir);
+      for (const item of items) {
+        const fullPath = path.join(dir, item);
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+          listDir(fullPath, prefix + item + '/');
+        } else {
+          files.push(prefix + item);
+        }
+      }
+    } catch (e) {
+      files.push('Error: ' + e.message);
+    }
+  }
+
+  listDir(publicDir);
+  res.json({
+    publicDir,
+    files,
+    __dirname,
+    cwd: process.cwd()
+  });
+});
+
+// Debug: Read a specific file
+app.get('/debug/read', (req, res) => {
+  const file = req.query.file || 'widget.html';
+  const filePath = path.join(__dirname, 'public', file);
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      res.json({ error: err.message, filePath, exists: fs.existsSync(filePath) });
+    } else {
+      res.json({ success: true, filePath, size: data.length });
+    }
+  });
+});
+
 // Manual static file serving
 app.get('/', (req, res) => {
   const filePath = path.join(__dirname, 'public', 'widget.html');
+  console.log('Trying to serve:', filePath);
+  console.log('Exists:', fs.existsSync(filePath));
   fs.readFile(filePath, (err, data) => {
-    if (err) return res.status(404).send('Not found');
+    if (err) return res.status(404).send('Not found: ' + err.message);
     res.type('html').send(data);
   });
 });
 
 app.get('/widget.html', (req, res) => {
   const filePath = path.join(__dirname, 'public', 'widget.html');
-  fs.readFile(filePath, (err, data) => {
-    if (err) return res.status(404).send('Not found');
-    res.type('html').send(data);
-  });
-});
-
-app.get('/test.html', (req, res) => {
-  const filePath = path.join(__dirname, 'public', 'test.html');
   fs.readFile(filePath, (err, data) => {
     if (err) return res.status(404).send('Not found');
     res.type('html').send(data);
