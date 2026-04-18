@@ -11,22 +11,34 @@ const PORT = process.env.PORT || 3000;
 const YOUR_TELEGRAM_ID = process.env.YOUR_TELEGRAM_ID || '';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 
-const HUMAN_TRIGGERS = ['talk to human', 'human', 'agent', 'real person', 'person', 'help me'];
+const HUMAN_TRIGGERS = ['talk to human', 'human', 'agent', 'person', 'help me', 'operator', 'real person'];
+
+const faq = [
+  { keywords: ['withdrawal', 'withdraw', ' WD ', 'reject'], 
+    answer: "Hello boss 🙏\nYour withdrawal may not meet the required conditions.\nKindly check turnover or contact us for full details 😊" },
+  { keywords: ['bonus', 'new member', 'register', 'signup'],
+    answer: "Hi boss 🎉\nYou can get 100% New Member Bonus\n✔️ Min deposit: 50K\n✔️ Max bonus: 200K\n✔️ Turnover: x18\n\nJust select bonus when depositing 😊" },
+  { keywords: ['slow', 'delay', 'processing', 'taking too long'],
+    answer: "Hi boss 🙏\nYour request is currently under process.\nKindly allow a few minutes. Thank you for your patience 😊" },
+  { keywords: ['refresh', 'reload', 'not working', 'error', 'issue'],
+    answer: "Hello boss 🙏\nKindly try to refresh the game or switch internet connection.\nIf issue persists, let us know so we can assist further 😊" }
+];
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-const sessions = new Map();
+const userStates = new Map();
 
 wss.on('connection', (widgetWs) => {
-  const sessionKey = `widget:${Date.now()}`;
-  sessions.set(widgetWs, { sessionKey });
+  const widgetId = `widget:${Date.now()}`;
+  userStates.set(widgetId, { awaitingScreenshot: false, originalMessage: '' });
 
   widgetWs.on('message', async (data) => {
     try {
       const msg = JSON.parse(data);
+      const state = userStates.get(widgetId) || { awaitingScreenshot: false, originalMessage: '' };
     
       if (msg.type === 'init') {
-        widgetWs.send(JSON.stringify({ type: 'init', sessionKey, botName: 'Support Bot' }));
+        widgetWs.send(JSON.stringify({ type: 'init', sessionKey: widgetId, botName: 'Support Bot' }));
         widgetWs.send(JSON.stringify({ type: 'bot_message', text: 'Hi there! 👋 I\'m your virtual assistant. How can I help you today?' }));
         return;
       }
@@ -34,46 +46,77 @@ wss.on('connection', (widgetWs) => {
       const lowerText = (msg.text || '').toLowerCase();
       const wantsHuman = HUMAN_TRIGGERS.some(t => lowerText.includes(t));
 
+      // User wants human directly
       if (wantsHuman) {
-        widgetWs.send(JSON.stringify({ type: 'human_mode', message: 'Connecting you to a human...' }));
+        widgetWs.send(JSON.stringify({ type: 'human_mode', message: 'Connecting you to a human... Please hold 🙏' }));
         if (YOUR_TELEGRAM_ID && TELEGRAM_BOT_TOKEN) {
           await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              chat_id: YOUR_TELEGRAM_ID, 
-              text: `🆘 Human Handoff Request\n\nSession: ${sessionKey}\nMessage: ${msg.text}`
-            })
+            body: JSON.stringify({ chat_id: YOUR_TELEGRAM_ID, text: `🆘 Human Handoff\n\nSession: ${widgetId}\nMessage: ${msg.text}` })
           });
+        }
+        userStates.set(widgetId, { awaitingScreenshot: false, originalMessage: '' });
+        return;
+      }
+
+      // Awaiting screenshot response
+      if (state.awaitingScreenshot) {
+        const hasConfirmation = lowerText.includes('screenshot') || lowerText.includes('done') || 
+                             lowerText.includes('sent') || lowerText.includes('yes') ||
+                             lowerText.includes('image') || lowerText.includes('photo');
+      
+        if (hasConfirmation) {
+          widgetWs.send(JSON.stringify({ type: 'human_mode', message: 'Perfect! 🙏 Connecting you to a human now...' }));
+          if (YOUR_TELEGRAM_ID && TELEGRAM_BOT_TOKEN) {
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                chat_id: YOUR_TELEGRAM_ID, 
+                text: `🆘 Human Handoff - DEPOSIT ISSUE\n\nSession: ${widgetId}\nIssue: ${state.originalMessage}\n\n✅ User has provided screenshot confirmation` 
+              })
+            });
+          }
+        } else {
+          widgetWs.send(JSON.stringify({ type: 'bot_message', text: '📸 Please send a screenshot of your deposit issue first.\n\nType "done" once you\'ve sent the screenshot and I\'ll connect you right away 🙏' }));
         }
         return;
       }
 
-      // Demo mode: simple auto-reply
-      const responses = [
-        "Thanks for your message! A human will get back to you soon.",
-        "Got it! I'll pass this along to our team.",
-        "Interesting question! Let me check and get back to you.",
-        "Thanks for reaching out! We'll respond shortly."
-      ];
-      const reply = responses[Math.floor(Math.random() * responses.length)];
-      setTimeout(() => {
-        widgetWs.send(JSON.stringify({ type: 'bot_message', text: reply }));
-      }, 1000);
+      // Deposit/balance issues - ask for screenshot first
+      const depositKeywords = ['deposit', 'balance', 'not added', 'missing', 'fail', 'failed', 'not going through', 'stuck', 'transaction'];
+      const isDepositIssue = depositKeywords.some(k => lowerText.includes(k));
+
+      if (isDepositIssue) {
+        userStates.set(widgetId, { awaitingScreenshot: true, originalMessage: msg.text });
+        widgetWs.send(JSON.stringify({ type: 'bot_message', text: 'I understand your concern boss 🙏\n\nTo help you faster, please send a **screenshot** of your deposit issue.\n\nOnce sent, type "done" and I\'ll connect you to a human agent immediately 💬' }));
+        return;
+      }
+
+      // Check FAQ
+      const faqMatch = faq.find(item => item.keywords.some(k => lowerText.includes(k)));
+      if (faqMatch && faqMatch.answer) {
+        widgetWs.send(JSON.stringify({ type: 'bot_message', text: faqMatch.answer }));
+      } else {
+        widgetWs.send(JSON.stringify({ type: 'bot_message', text: 'Thanks for your message! A human will get back to you shortly. 🙏\n\nOr type "talk to human" to connect now 💬' }));
+      }
 
     } catch (e) {}
   });
 
-  widgetWs.on('close', () => sessions.delete(widgetWs));
+  widgetWs.on('close', () => userStates.delete(widgetId));
 });
 
 app.use(express.json());
 app.post('/webhook/telegram', async (req, res) => {
   const { message } = req.body;
   if (message && message.text) {
-    for (const [widgetWs] of sessions) {
-      widgetWs.send(JSON.stringify({ type: 'human_message', text: message.text, sender: 'Human Support' }));
-    }
+    wss.clients.forEach(client => {
+      if (client.readyState === 1) {
+        client.send(JSON.stringify({ type: 'human_message', text: message.text, sender: 'Human Support' }));
+      }
+    });
   }
   res.send('OK');
 });
