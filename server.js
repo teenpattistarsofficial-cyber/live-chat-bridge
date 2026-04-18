@@ -123,3 +123,8 @@ app.post('/webhook/telegram', async (req, res) => {
 });
 
 server.listen(PORT, () => console.log(`Bridge running on port ${PORT}`));
+
+
+app.get('/debug', (req, res) => {
+  res.send('Server is running! Files should be in: ' + path.join(__dirname, 'public'));
+});
