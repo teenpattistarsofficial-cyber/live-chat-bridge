@@ -25,8 +25,7 @@ const faq = [
 ];
 
 // Serve static files from public directory
-app.use(express.static('public'));
-
+app.use(express.static(path.join(__dirname, 'public')));
 // Also serve root index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'widget.html'));
