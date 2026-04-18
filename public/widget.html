@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Chat</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .chat-container { width: 100%; max-width: 420px; height: 600px; background: #fff; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); display: flex; flex-direction: column; overflow: hidden; }
+    .chat-header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; padding: 20px; display: flex; align-items: center; gap: 12px; }
+    .chat-header .avatar { width: 40px; height: 40px; background: rgba(255,255,255,0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .chat-header .info h2 { font-size: 16px; font-weight: 600; }
+    .chat-header .info span { font-size: 12px; opacity: 0.8; }
+    .status-indicator { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; display: inline-block; margin-right: 4px; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .chat-messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+    .message { max-width: 80%; padding: 12px 16px; border-radius: 16px; font-size: 14px; line-height: 1.5; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .message.bot { background: #f1f1f1; color: #1a1a1a; align-self: flex-start; border-bottom-left-radius: 4px; }
+    .message.human { background: #6366f1; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+    .message.system { background: #fef3c7; color: #92400e; align-self: center; text-align: center; font-size: 13px; max-width: 90%; }
+    .typing-indicator { display: flex; gap: 4px; padding: 12px 16px; background: #f1f1f1; border-radius: 16px; align-self: flex-start; border-bottom-left-radius: 4px; }
+    .typing-indicator span { width: 8px; height: 8px; background: #9ca3af; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out; }
+    .typing-indicator span:nth-child(1) { animation-delay: 0s; }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-6px); } }
+    .chat-input { padding: 16px; border-top: 1px solid #eee; display: flex; gap: 12px; }
+    .chat-input input { flex: 1; padding: 12px 16px; border: 1px solid #ddd; border-radius: 24px; font-size: 14px; outline: none; transition: border-color 0.2s; }
+    .chat-input input:focus { border-color: #6366f1; }
+    .chat-input button { width: 44px; height: 44px; background: #6366f1; color: white; border: none; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s, transform 0.2s; }
+    .chat-input button:hover { background: #5558e3; transform: scale(1.05); }
+    .chat-input button:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+    .human-handoff-btn { display: block; width: calc(100% - 40px); margin: 0 20px 16px; padding: 10px; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; border-radius: 8px; font-size: 13px; cursor: pointer; transition: background 0.2s; }
+    .human-handoff-btn:hover { background: #fde68a; }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div class="chat-header">
+      <div class="avatar">🤖</div>
+      <div class="info"><h2 id="botName">Support Assistant</h2><span><span class="status-indicator"></span> Online</span></div>
+    </div>
+    <div class="chat-messages" id="messages"><div class="message bot">Hi there! 👋 I'm your virtual assistant. How can I help you today?</div></div>
+    <button class="human-handoff-btn" id="humanBtn" onclick="requestHuman()">💬 Talk to a human</button>
+    <div class="chat-input">
+      <input type="text" id="msgInput" placeholder="Type your message..." autocomplete="off"/>
+      <button id="sendBtn" onclick="sendMessage()">➤</button>
+    </div>
+  </div>
+  <script>
+    const messagesEl = document.getElementById('messages');
+    const msgInput = document.getElementById('msgInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const humanBtn = document.getElementById('humanBtn');
+    let ws = null; let sessionKey = null; let isConnected = false;
+    function connect() {
+      ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}`);
+      ws.onopen = () => { isConnected = true; ws.send(JSON.stringify({ type: 'init' })); };
+      ws.onmessage = (event) => { const msg = JSON.parse(event.data); handleMessage(msg); };
+      ws.onclose = () => { isConnected = false; setTimeout(connect, 3000); };
+    }
+    function handleMessage(msg) {
+      if (msg.type === 'init') { sessionKey = msg.sessionKey; addMessage('bot', `Hi there! 👋 I'm ${msg.botName || 'your assistant'}. How can I help you today?`); }
+      else if (msg.type === 'human_mode') { addMessage('system', msg.message); humanBtn.style.display = 'none'; msgInput.disabled = true; msgInput.placeholder = 'Waiting for human...'; sendBtn.disabled = true; }
+      else if (msg.type === 'human_message' || msg.type === 'bot_message') { addMessage(msg.type === 'human_message' ? 'human' : 'bot', msg.text); removeTyping(); }
+      else if (msg.type === 'typing' && msg.isTyping) showTyping();
+      else if (msg.type === 'typing' && !msg.isTyping) removeTyping();
+    }
+    function addMessage(type, text) { const div = document.createElement('div'); div.className = `message ${type}`; div.textContent = text; messagesEl.appendChild(div); messagesEl.scrollTop = messagesEl.scrollHeight; }
+    function showTyping() { if (document.getElementById('typing')) return; const div = document.createElement('div'); div.id = 'typing'; div.className = 'typing-indicator'; div.innerHTML = '<span></span><span></span><span></span>'; messagesEl.appendChild(div); }
+    function removeTyping() { const t = document.getElementById('typing'); if (t) t.remove(); }
+    function sendMessage() { const text = msgInput.value.trim(); if (!text || !isConnected) return; addMessage('human', text); msgInput.value = ''; ws.send(JSON.stringify({ text })); setTimeout(showTyping, 300); }
+    function requestHuman() { const text = msgInput.value.trim() || 'User requested human assistance'; addMessage('human', text); msgInput.value = ''; ws.send(JSON.stringify({ text })); addMessage('system', 'Connecting you to a human...'); humanBtn.style.display = 'none'; }
+    msgInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+    connect();
+  </script>
+</body>
+</html>
