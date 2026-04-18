@@ -1,6 +1,7 @@
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const http = require('http');
+const fs = require('fs');
 const path = require('path');
 
 const app = express();
@@ -24,11 +25,29 @@ const faq = [
     answer: "Hello boss 🙏\nKindly try to refresh the game or switch internet connection.\nIf issue persists, let us know so we can assist further 😊" }
 ];
 
-// Serve static files from public directory
-app.use(express.static(path.join(__dirname, 'public')));
-// Also serve root index.html
+// Manual static file serving
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'widget.html'));
+  const filePath = path.join(__dirname, 'public', 'widget.html');
+  fs.readFile(filePath, (err, data) => {
+    if (err) return res.status(404).send('Not found');
+    res.type('html').send(data);
+  });
+});
+
+app.get('/widget.html', (req, res) => {
+  const filePath = path.join(__dirname, 'public', 'widget.html');
+  fs.readFile(filePath, (err, data) => {
+    if (err) return res.status(404).send('Not found');
+    res.type('html').send(data);
+  });
+});
+
+app.get('/test.html', (req, res) => {
+  const filePath = path.join(__dirname, 'public', 'test.html');
+  fs.readFile(filePath, (err, data) => {
+    if (err) return res.status(404).send('Not found');
+    res.type('html').send(data);
+  });
 });
 
 const userStates = new Map();
@@ -60,7 +79,6 @@ wss.on('connection', (widgetWs) => {
             body: JSON.stringify({ chat_id: YOUR_TELEGRAM_ID, text: `🆘 Human Handoff\n\nSession: ${widgetId}\nMessage: ${msg.text}` })
           });
         }
-        userStates.set(widgetId, { awaitingScreenshot: false, originalMessage: '' });
         return;
       }
 
@@ -123,8 +141,3 @@ app.post('/webhook/telegram', async (req, res) => {
 });
 
 server.listen(PORT, () => console.log(`Bridge running on port ${PORT}`));
-
-
-app.get('/debug', (req, res) => {
-  res.send('Server is running! Files should be in: ' + path.join(__dirname, 'public'));
-});
